@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+import math
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 import torch.nn.functional as F
 import src.utils as utils
 from src.constants import ACTIVATION_FUNCS
@@ -32,6 +33,113 @@ def _init_rnn_weight(weight, init_type, gain):
     else:
         raise ValueError(f"Unknown weight_init: {init_type}")
 
+
+class DualInputRNN(nn.Module):
+    """
+    Single-layer dual-input RNN.
+
+    Update rule:
+        h_t = act(
+            x1_t @ weight_ih_l0.T + bias_ih_l0
+          + x2_t @ weight_jh_l0.T + bias_jh_l0
+          + h_{t-1} @ weight_hh_l0.T + bias_hh_l0
+        )
+
+    Inputs:
+        input1: [B, L, I1] if batch_first=True else [L, B, I1]
+        input2: [B, L, I2] if batch_first=True else [L, B, I2]
+        hx:     [1, B, H] (optional)
+
+    Returns:
+        output: [B, L, H] if batch_first=True else [L, B, H]
+        hn:     [1, B, H]
+    """
+    def __init__(
+        self,
+        input1_size,
+        input2_size,
+        hidden_size,
+        nonlinearity="tanh",
+        bias=False,
+        batch_first=True,
+    ):
+        super().__init__()
+        self.input1_size = input1_size
+        self.input2_size = input2_size
+        self.hidden_size = hidden_size
+        self.batch_first = batch_first
+        self.bias = bias
+        self.nonlinearity = nonlinearity
+
+        if nonlinearity not in ("tanh", "relu"):
+            raise ValueError("nonlinearity must be 'tanh' or 'relu'")
+
+        # Match nn.RNN-style naming where possible
+        self.weight_ih_l0 = nn.Parameter(torch.empty(hidden_size, input1_size))
+        self.weight_jh_l0 = nn.Parameter(torch.empty(hidden_size, input2_size))  # second input
+        self.weight_hh_l0 = nn.Parameter(torch.empty(hidden_size, hidden_size))
+
+        if bias:
+            self.bias_ih_l0 = nn.Parameter(torch.empty(hidden_size))
+            self.bias_jh_l0 = nn.Parameter(torch.empty(hidden_size))
+            self.bias_hh_l0 = nn.Parameter(torch.empty(hidden_size))
+        else:
+            self.register_parameter("bias_ih_l0", None)
+            self.register_parameter("bias_jh_l0", None)
+            self.register_parameter("bias_hh_l0", None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        # Same scale convention as torch RNN default
+        stdv = 1.0 / math.sqrt(self.hidden_size)
+        for p in self.parameters():
+            nn.init.uniform_(p, -stdv, stdv)
+
+    def _act(self, x):
+        return torch.tanh(x) if self.nonlinearity == "tanh" else F.relu(x)
+
+    def forward(self, input1, input2, hx=None):
+        if input1.dim() != 3 or input2.dim() != 3:
+            raise ValueError("input1 and input2 must be 3D tensors")
+        if input1.shape[:2] != input2.shape[:2]:
+            raise ValueError("input1 and input2 must share batch and sequence dims")
+
+        if self.batch_first:
+            B, L, _ = input1.shape
+            x1 = input1
+            x2 = input2
+        else:
+            L, B, _ = input1.shape
+            x1 = input1.transpose(0, 1)  # -> [B, L, I1]
+            x2 = input2.transpose(0, 1)  # -> [B, L, I2]
+
+        if hx is None:
+            h_t = torch.zeros(B, self.hidden_size, device=x1.device, dtype=x1.dtype)
+        else:
+            if hx.shape != (1, B, self.hidden_size):
+                raise ValueError(f"hx must have shape [1, {B}, {self.hidden_size}]")
+            h_t = hx[0]
+
+        outputs = []
+        for t in range(L):
+            pre = (
+                F.linear(x1[:, t, :], self.weight_ih_l0, self.bias_ih_l0)
+                + F.linear(x2[:, t, :], self.weight_jh_l0, self.bias_jh_l0)
+                + F.linear(h_t, self.weight_hh_l0, self.bias_hh_l0)
+            )
+            h_t = self._act(pre)
+            outputs.append(h_t)
+
+        output = torch.stack(outputs, dim=1)  # [B, L, H]
+        hn = h_t.unsqueeze(0)                 # [1, B, H]
+
+        if not self.batch_first:
+            output = output.transpose(0, 1)   # [L, B, H]
+
+        return output, hn
+
+
 class RNN(torch.nn.Module):
     def __init__(self, options, place_cells):
         super(RNN, self).__init__()
@@ -42,16 +150,27 @@ class RNN(torch.nn.Module):
         self.place_cells = place_cells
         self.loss = options.loss
         self.truncating = options.truncating
+        self.use_prev_input = options.use_prev_input
 
         # Input weights
         self.encoder = torch.nn.Linear(self.Np, self.Ng, bias=False)
-        self.RNN = torch.nn.RNN(
-            input_size=2,
-            hidden_size=self.Ng,
-            nonlinearity=options.rec_activation,
-            bias=False,
-            batch_first=True,
-        )
+        if self.use_prev_input:
+            self.RNN = DualInputRNN(
+                input1_size=2,
+                input2_size=self.Np,
+                hidden_size=self.Ng,
+                nonlinearity=options.rec_activation,
+                bias=False,
+                batch_first=True,
+            )
+        else:
+            self.RNN = torch.nn.RNN(
+                input_size=2,
+                hidden_size=self.Ng,
+                nonlinearity=options.rec_activation,
+                bias=False,
+                batch_first=True,
+            )
         # Linear read-out weights
         self.decoder = torch.nn.Linear(self.Ng, self.Np, bias=True)
         self._apply_weight_init(options)
@@ -66,16 +185,19 @@ class RNN(torch.nn.Module):
         gain = _get_init_gain(options)
         _init_linear_weight(self.encoder.weight, init_type, gain)
         _init_rnn_weight(self.RNN.weight_ih_l0, init_type, gain)
+        if self.use_prev_input:
+            _init_rnn_weight(self.RNN.weight_jh_l0, init_type, gain)
         _init_rnn_weight(self.RNN.weight_hh_l0, init_type, gain)
         _init_linear_weight(self.decoder.weight, init_type, gain)
         if self.decoder.bias is not None and init_type != "default":
             nn.init.zeros_(self.decoder.bias)
 
-    def g(self, inputs):
+    def g(self, inputs, pc_outputs=None):
         """
         Compute grid cell activations.
         Args:
             inputs: Batch of 2d velocity inputs with shape [batch_size, sequence_length, 2].
+            pc_outputs: Batch of place cell activations with shape [batch_size, sequence_length, Np].
 
         Returns:
             g: Batch of grid cell activations with shape [batch_size, sequence_length, Ng].
@@ -83,9 +205,15 @@ class RNN(torch.nn.Module):
         if self.truncating == 0:
             v, p0 = inputs
             init_state = self.encoder(p0)[None]
-            g, _ = self.RNN(v, init_state)
-            return g
 
+            if self.use_prev_input:
+                pc_inputs = torch.zeros_like(pc_outputs)
+                pc_inputs[:, 1:, :] = pc_outputs[:, :-1, :]    
+                g, _ = self.RNN(v, pc_inputs, init_state)  # use place cell activity from previous timestep as input to RNN
+            else:
+                g, _ = self.RNN(v, init_state)
+            return g
+        
         else:
             total_g = []
             vs, p0 = inputs
@@ -99,7 +227,7 @@ class RNN(torch.nn.Module):
             total_g = torch.cat(total_g, dim=1)
             return total_g  # bsz, seq_len, Ng
 
-    def predict(self, inputs):
+    def predict(self, inputs, pc_outputs=None):
         """
         Predict place cell code.
         Args:
@@ -109,7 +237,7 @@ class RNN(torch.nn.Module):
             place_preds: Predicted place cell activations with shape
                 [batch_size, sequence_length, Np].
         """
-        place_preds = self.decoder(self.g(inputs))
+        place_preds = self.decoder(self.g(inputs, pc_outputs))
 
         return place_preds
 
@@ -127,7 +255,10 @@ class RNN(torch.nn.Module):
             err: Avg. decoded position error in cm.
         """
         y = pc_outputs
-        preds = self.out_activation(self.predict(inputs))
+        if self.use_prev_input:
+            preds = self.out_activation(self.predict(inputs, pc_outputs))
+        else:
+            preds = self.out_activation(self.predict(inputs))
         if self.loss == "CE":
             loss = -(y * torch.log(preds + 1e-9)).sum(-1).mean()
         elif self.loss == "MSE":
