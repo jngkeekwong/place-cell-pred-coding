@@ -20,6 +20,7 @@ class Trainer(object):
         self.n_epochs = self.options.n_epochs
         self.n_steps = self.options.n_steps
         self.truncating = self.options.truncating
+        self.use_prev_input = self.options.use_prev_input
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), 
@@ -155,8 +156,11 @@ class Trainer(object):
         if self.options.is_wandb:
             wandb.finish()
 
-    def predict(self, inputs):
-        pred_pos = self.model.predict(inputs)
+    def predict(self, inputs, pc_outputs=None):
+        if self.use_prev_input:
+            pred_pos = self.model.predict(inputs, pc_outputs=pc_outputs)
+        else:
+            pred_pos = self.model.predict(inputs, pc_outputs=None)
         return pred_pos, None
 
 class PCTrainer(object):
@@ -376,7 +380,7 @@ class PCTrainer(object):
         if self.options.is_wandb:
             wandb.finish()
 
-    def predict(self, inputs):
+    def predict(self, inputs, pc_outputs=None):
         self.model.eval()
         self.init_model.eval()
         vs, init_actv = inputs

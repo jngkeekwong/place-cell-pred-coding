@@ -115,7 +115,7 @@ def compute_ratemaps(
 
     for index in tqdm(range(n_avg)):
         # pos_batch: [batch_size, sequence_length, 2]
-        inputs, _, pos_batch = trajectory_generator.get_test_batch()
+        inputs, pc_outputs_batch, pos_batch = trajectory_generator.get_test_batch()
 
         if isinstance(model, m.TemporalPCN):
             _, g_batch = trainer.predict(inputs)
@@ -124,7 +124,7 @@ def compute_ratemaps(
             )  # [sequence_length*batch_size, Ng]
         else:
             g_batch = (
-                model.g(inputs)[:, :, :Ng].detach().cpu().numpy().reshape(-1, Ng)
+                model.g(inputs, pc_outputs_batch)[:, :, :Ng].detach().cpu().numpy().reshape(-1, Ng)
             )  # [sequence_length*batch_size, Ng]
 
         pos_batch = np.reshape(pos_batch.cpu().detach().numpy(), [-1, 2])
@@ -359,10 +359,10 @@ def compute_1d_ratemaps(
 
     for index in range(n_avg):
         # pos_batch: [batch_size, sequence_length, 2]
-        inputs, _, pos_batch = trajectory_generator.get_test_batch()
+        inputs, pc_outputs_batch, pos_batch = trajectory_generator.get_test_batch()
 
         # g_batch = model.g(inputs).detach().cpu().numpy().reshape(-1, Ng) # [sequence_length*batch_size, Ng]
-        _, g_batch = trainer.predict(inputs)
+        _, g_batch = trainer.predict(inputs, pc_outputs=pc_outputs_batch)
         g_batch = (
             g_batch.detach().cpu().numpy().reshape(-1, Ng)
         )  # [sequence_length*batch_size, Ng]
@@ -444,7 +444,7 @@ def plot_1d_performance(place_cell, generator, options, trainer):
     # check if the model generalizes well
     inputs, pc_outputs, pos = generator.get_test_batch()
     pos = pos.cpu()[:5]
-    pred_pos = place_cell.get_nearest_cell_pos(trainer.predict(inputs[:5])[0]).cpu()
+    pred_pos = place_cell.get_nearest_cell_pos(trainer.predict(inputs[:5], pc_outputs[:5])[0]).cpu()
     centers = place_cell.centers.cpu()
     l = options.track_length / 2
 
@@ -513,7 +513,7 @@ def plot_2d_performance(place_cell, generator, options, trainer):
         select = 5
     pos = pos.cpu()[:select]
     pred_pos = place_cell.get_nearest_cell_pos(
-        trainer.predict(inputs)[0][:select]
+        trainer.predict(inputs, pc_outputs)[0][:select]
     ).cpu()  # size [select, seq_len, 2]
     centers = place_cell.centers.cpu()
 

@@ -192,7 +192,7 @@ class RNN(torch.nn.Module):
         if self.decoder.bias is not None and init_type != "default":
             nn.init.zeros_(self.decoder.bias)
 
-    def g(self, inputs, pc_outputs=None):
+    def g(self, inputs, pc_outputs):
         """
         Compute grid cell activations.
         Args:
@@ -232,12 +232,15 @@ class RNN(torch.nn.Module):
         Predict place cell code.
         Args:
             inputs: Batch of 2d velocity inputs with shape [batch_size, sequence_length, 2].
-
+            pc_outputs: Batch of place cell activations with shape [batch_size, sequence_length, Np].
         Returns:
             place_preds: Predicted place cell activations with shape
                 [batch_size, sequence_length, Np].
         """
-        place_preds = self.decoder(self.g(inputs, pc_outputs))
+        if self.use_prev_input:
+            place_preds = self.decoder(self.g(inputs, pc_outputs=pc_outputs))
+        else:
+            place_preds = self.decoder(self.g(inputs, pc_outputs=None))
 
         return place_preds
 
@@ -256,9 +259,9 @@ class RNN(torch.nn.Module):
         """
         y = pc_outputs
         if self.use_prev_input:
-            preds = self.out_activation(self.predict(inputs, pc_outputs))
+            preds = self.out_activation(self.predict(inputs, pc_outputs=pc_outputs))
         else:
-            preds = self.out_activation(self.predict(inputs))
+            preds = self.out_activation(self.predict(inputs, pc_outputs=None))
         if self.loss == "CE":
             loss = -(y * torch.log(preds + 1e-9)).sum(-1).mean()
         elif self.loss == "MSE":

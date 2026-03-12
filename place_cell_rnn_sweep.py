@@ -106,6 +106,12 @@ parser.add_argument(
     "--truncating", type=int, default=0, help="Truncating steps for BPTT"
 )
 parser.add_argument(
+    "--use_prev_input",
+    type=lambda x: (str(x).lower() == "true"),
+    default=False,
+    help="Whether to use previous place cell position as input during training",
+)
+parser.add_argument(
     "--env_shape",
     type=str,
     default='rectangle',
