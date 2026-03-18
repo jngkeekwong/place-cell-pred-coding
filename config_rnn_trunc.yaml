@@ -50,8 +50,6 @@ command:
 - "True"
 - --sweep
 - "True"
-- --weight_init
-- "kaiming_normal"
 - --update_weights_online 
 - "False"
 - --use_prev_input 

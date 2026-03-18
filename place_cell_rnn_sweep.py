@@ -172,9 +172,9 @@ with open("./config_rnn.yaml") as file:
 run = wandb.init(config=config)
 
 options.learning_rate = wandb.config.learning_rate
-options.truncating = wandb.config.truncating
 options.weight_decay = wandb.config.weight_decay
 options.decay_rate = wandb.config.decay_rate
+options.truncating = wandb.config.truncating
 
 # define place cells, trajectory generator, model, and trainer
 place_cell = PlaceCells(options)

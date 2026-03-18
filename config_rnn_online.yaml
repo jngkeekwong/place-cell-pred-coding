@@ -46,9 +46,7 @@ command:
 - "True"
 - --sweep
 - "True"
-- --weight_init
-- "kaiming_normal"
-- -- truncating 
+- --truncating 
 - "0" 
 - --update_weights_online 
 - "True"
