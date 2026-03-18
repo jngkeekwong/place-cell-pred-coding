@@ -1,6 +1,6 @@
 program: place_cell_rnn_sweep.py
-project: tbptt_sweep_abrupt3
-name: search_v0
+project: rnn_sweep_bptt_trunc
+name: search_v1
 method: bayes
 
 metric:
@@ -10,13 +10,17 @@ metric:
 parameters:
   learning_rate:
     distribution: log_uniform_values
-    min: 0.000005
-    max: 0.005
+    min: 0.00005
+    max: 0.05
+  decay_rate:
+    values: [0.6, 0.7, 0.8, 0.9, 1.0]
+  weight_decay:
+    values: [0, 0.00001, 0.0001, 0.001]
   truncating:
     distribution: int_uniform
     min: 0
     max: 9
-    
+
 early_terminate:
   type: hyperband
   min_iter: 10
@@ -34,10 +38,6 @@ command:
 - "100"
 - --decay_step_size
 - "10"
-- --decay_rate
-- "0.8"
-- --weight_decay
-- "0"
 - --save
 - "False"
 - --out_activation
@@ -50,3 +50,10 @@ command:
 - "True"
 - --sweep
 - "True"
+- --weight_init
+- "kaiming_normal"
+- --update_weights_online 
+- "False"
+- --use_prev_input 
+- "False"
+

@@ -112,6 +112,12 @@ parser.add_argument(
     help="Whether to use previous place cell position as input during training",
 )
 parser.add_argument(
+    "--update_weights_online", 
+    type=lambda x: (str(x).lower() == "true"), 
+    default=False, 
+    help="Whether to update weights online during training, just like with tPC"
+)
+parser.add_argument(
     "--env_shape",
     type=str,
     default='rectangle',

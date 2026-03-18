@@ -1,5 +1,5 @@
 program: place_cell_rnn_sweep.py
-project: rnn_sweep_bptt_full
+project: rnn_sweep_tbptt1_online
 name: search_v1
 method: bayes
 
@@ -51,7 +51,7 @@ command:
 - -- truncating 
 - "0" 
 - --update_weights_online 
-- "False"
+- "True"
 - --use_prev_input 
 - "False"
 
