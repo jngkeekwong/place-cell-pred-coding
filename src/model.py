@@ -219,9 +219,19 @@ class RNN(torch.nn.Module):
             vs, p0 = inputs
             seq_len = vs.size(1)
             h = self.encoder(p0)[None]
+            if self.use_prev_input:
+                if pc_outputs is None:
+                    raise ValueError("pc_outputs must be provided when use_prev_input is True")
+                pc_inputs = torch.zeros_like(pc_outputs)
+                pc_inputs[:, 1:, :] = pc_outputs[:, :-1, :]
             for k in range(0, seq_len, self.truncating):
-                v = vs[:, k : min(k + self.truncating, seq_len)]  # bsz, trunc, 2
-                g, h = self.RNN(v, h)  # g: bsz, trunc, Ng; h: bsz, 1, Ng (final hidden state to be used in next iter)
+                end_k = min(k + self.truncating, seq_len)
+                v = vs[:, k:end_k]  # bsz, trunc, 2
+                if self.use_prev_input:
+                    pc_in = pc_inputs[:, k:end_k]  # bsz, trunc, Np
+                    g, h = self.RNN(v, pc_in, h)
+                else:
+                    g, h = self.RNN(v, h)
                 h = h.detach()
                 total_g.append(g)
             total_g = torch.cat(total_g, dim=1)

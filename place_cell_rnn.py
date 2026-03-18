@@ -158,7 +158,10 @@ if options.mode == "train":
     now = time.strftime("%b-%d-%Y-%H-%M-%S", time.gmtime(time.time()))
     if options.restore is not None:
         now = options.restore
-    options.save_dir = os.path.join("./results/rnn", now)
+    if options.use_prev_input:
+        options.save_dir = os.path.join("./results/rnn_prev", now)
+    else:
+        options.save_dir = os.path.join("./results/rnn", now)
 
     if not os.path.exists(options.save_dir):
         os.makedirs(options.save_dir)
@@ -184,7 +187,10 @@ if options.mode == "train":
 
 else:
     now = options.mode
-    save_dir = os.path.join("./results/rnn", now)
+    if options.use_prev_input:
+        save_dir = os.path.join("./results/rnn_prev", now)
+    else:
+        save_dir = os.path.join("./results/rnn", now)
 
     # load the configuration file to args
     t_args = argparse.Namespace()
