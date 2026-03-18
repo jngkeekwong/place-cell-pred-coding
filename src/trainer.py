@@ -21,6 +21,7 @@ class Trainer(object):
         self.n_steps = self.options.n_steps
         self.truncating = self.options.truncating
         self.use_prev_input = self.options.use_prev_input
+        self.update_weights_online = self.options.update_weights_online
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), 
@@ -57,18 +58,48 @@ class Trainer(object):
                 [batch_size, sequence_length, Np].
             pos: Ground truth 2d position with shape [batch_size, sequence_length, 2].
         '''
-        inputs = (inputs[0].to(self.options.device), inputs[1].to(self.options.device))
-        pc_outputs = pc_outputs.to(self.options.device)
-        pos = pos.to(self.options.device)
+        if self.update_weights_online:
 
-        self.model.zero_grad()
+            total_loss = 0 # average loss across time steps
+            total_err = 0 # average error across time steps
+            vs, init_actv = inputs[0].to(self.options.device), inputs[1].to(self.options.device)
 
-        loss, err = self.model.compute_loss(inputs, pc_outputs, pos)
+            # initialize the online recurrent state from the encoded initial place code
+            self.model.prev_hidden = self.model.encoder(init_actv).clone().detach()
 
-        loss.backward()
-        self.optimizer.step()
+            for k in range(self.options.sequence_length):
+                pc_k = pc_outputs[:, k : k + 1].to(self.options.device)
+                pos_k = pos[:, k : k + 1].to(self.options.device)
+                v_k = vs[:, k : k + 1].to(self.options.device)
+                self.optimizer.zero_grad()
+                loss, err = self.model.compute_loss(v_k, pc_k, pos_k)
+                loss.backward()
+                self.optimizer.step()
 
-        return loss.item(), err.item() 
+                # update the hidden state and input
+                self.model.pc_input = pc_k[:, 0, :].clone().detach()
+                # self.model.prev_hidden = self.model.g.clone().detach()
+
+                # add up the loss value at each time step
+                total_loss += loss.item()
+                total_err += err.item()
+
+            return total_loss / (self.options.sequence_length), total_err / (self.options.sequence_length)
+
+
+        else:
+            inputs = (inputs[0].to(self.options.device), inputs[1].to(self.options.device))
+            pc_outputs = pc_outputs.to(self.options.device)
+            pos = pos.to(self.options.device)
+
+            self.optimizer.zero_grad()
+
+            loss, err = self.model.compute_loss(inputs, pc_outputs, pos)
+
+            loss.backward()
+            self.optimizer.step()
+
+            return loss.item(), err.item() 
 
     def train(self, preloaded_data=None, save=True):
         ''' 

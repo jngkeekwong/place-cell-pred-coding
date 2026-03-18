@@ -110,6 +110,12 @@ parser.add_argument(
     help="Whether to use previous place cell position as input during training"
 )
 parser.add_argument(
+    "--update_weights_online", 
+    type=lambda x: (str(x).lower() == "true"), 
+    default=False, 
+    help="Whether to update weights online during training, just like with tPC"
+)
+parser.add_argument(
     "--env_shape",
     type=str,
     default='rectangle',
@@ -158,10 +164,16 @@ if options.mode == "train":
     now = time.strftime("%b-%d-%Y-%H-%M-%S", time.gmtime(time.time()))
     if options.restore is not None:
         now = options.restore
-    if options.use_prev_input:
-        options.save_dir = os.path.join("./results/rnn_prev", now)
+    if options.update_weights_online:
+        if options.use_prev_input:
+            options.save_dir = os.path.join("./results/rnn_online_prev", now)
+        else:
+            options.save_dir = os.path.join("./results/rnn_online", now)
     else:
-        options.save_dir = os.path.join("./results/rnn", now)
+        if options.use_prev_input:
+            options.save_dir = os.path.join("./results/rnn_prev", now)
+        else:
+            options.save_dir = os.path.join("./results/rnn", now)
 
     if not os.path.exists(options.save_dir):
         os.makedirs(options.save_dir)
@@ -187,10 +199,16 @@ if options.mode == "train":
 
 else:
     now = options.mode
-    if options.use_prev_input:
-        save_dir = os.path.join("./results/rnn_prev", now)
+    if options.update_weights_online:
+        if options.use_prev_input:
+            save_dir = os.path.join("./results/rnn_online_prev", now)
+        else:
+            save_dir = os.path.join("./results/rnn_online", now)
     else:
-        save_dir = os.path.join("./results/rnn", now)
+        if options.use_prev_input:
+            save_dir = os.path.join("./results/rnn_prev", now)
+        else:
+            save_dir = os.path.join("./results/rnn", now)
 
     # load the configuration file to args
     t_args = argparse.Namespace()

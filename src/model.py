@@ -151,6 +151,10 @@ class RNN(torch.nn.Module):
         self.loss = options.loss
         self.truncating = options.truncating
         self.use_prev_input = options.use_prev_input
+        self.update_weights_online = options.update_weights_online
+        if self.update_weights_online:
+            self.prev_hidden = torch.zeros((options.batch_size, options.Ng), device=options.device)
+            self.pc_input = torch.zeros((options.batch_size, options.Np), device=options.device)
 
         # Input weights
         self.encoder = torch.nn.Linear(self.Np, self.Ng, bias=False)
@@ -202,40 +206,65 @@ class RNN(torch.nn.Module):
         Returns:
             g: Batch of grid cell activations with shape [batch_size, sequence_length, Ng].
         """
-        if self.truncating == 0:
-            v, p0 = inputs
-            init_state = self.encoder(p0)[None]
+        if self.update_weights_online:
+            if inputs.dim() != 3:
+                raise ValueError(
+                    "Online updates expect inputs with shape [batch_size, 1, 2]"
+                )
 
             if self.use_prev_input:
-                pc_inputs = torch.zeros_like(pc_outputs)
-                pc_inputs[:, 1:, :] = pc_outputs[:, :-1, :]    
-                g, _ = self.RNN(v, pc_inputs, init_state)  # use place cell activity from previous timestep as input to RNN
-            else:
-                g, _ = self.RNN(v, init_state)
-            return g
-        
-        else:
-            total_g = []
-            vs, p0 = inputs
-            seq_len = vs.size(1)
-            h = self.encoder(p0)[None]
-            if self.use_prev_input:
-                if pc_outputs is None:
-                    raise ValueError("pc_outputs must be provided when use_prev_input is True")
-                pc_inputs = torch.zeros_like(pc_outputs)
-                pc_inputs[:, 1:, :] = pc_outputs[:, :-1, :]
-            for k in range(0, seq_len, self.truncating):
-                end_k = min(k + self.truncating, seq_len)
-                v = vs[:, k:end_k]  # bsz, trunc, 2
-                if self.use_prev_input:
-                    pc_in = pc_inputs[:, k:end_k]  # bsz, trunc, Np
-                    g, h = self.RNN(v, pc_in, h)
+                if self.pc_input.dim() == 2:
+                    pc_input = self.pc_input.unsqueeze(1)
+                elif self.pc_input.dim() == 3:
+                    pc_input = self.pc_input
                 else:
-                    g, h = self.RNN(v, h)
-                h = h.detach()
-                total_g.append(g)
-            total_g = torch.cat(total_g, dim=1)
-            return total_g  # bsz, seq_len, Ng
+                    raise ValueError(
+                        "pc_input must have shape [batch_size, Np] or [batch_size, 1, Np]"
+                    )
+                g, _ = self.RNN(inputs, pc_input, self.prev_hidden.unsqueeze(0))  # use place cell activity from previous timestep as input to RNN
+            else:
+                g, _ = self.RNN(inputs, self.prev_hidden.unsqueeze(0))  # use previous hidden state as input to RNN
+
+            # Update hidden state
+            self.prev_hidden = g.clone().detach()[:, -1, :]  # update prev_hidden with the last hidden state of the current batch
+
+            return g
+ 
+        else:
+            if self.truncating == 0:
+                v, p0 = inputs
+                init_state = self.encoder(p0)[None]
+
+                if self.use_prev_input:
+                    pc_inputs = torch.zeros_like(pc_outputs)
+                    pc_inputs[:, 1:, :] = pc_outputs[:, :-1, :]    
+                    g, _ = self.RNN(v, pc_inputs, init_state)  # use place cell activity from previous timestep as input to RNN
+                else:
+                    g, _ = self.RNN(v, init_state)
+                return g
+            
+            else:
+                total_g = []
+                vs, p0 = inputs
+                seq_len = vs.size(1)
+                h = self.encoder(p0)[None]
+                if self.use_prev_input:
+                    if pc_outputs is None:
+                        raise ValueError("pc_outputs must be provided when use_prev_input is True")
+                    pc_inputs = torch.zeros_like(pc_outputs)
+                    pc_inputs[:, 1:, :] = pc_outputs[:, :-1, :]
+                for k in range(0, seq_len, self.truncating):
+                    end_k = min(k + self.truncating, seq_len)
+                    v = vs[:, k:end_k]  # bsz, trunc, 2
+                    if self.use_prev_input:
+                        pc_in = pc_inputs[:, k:end_k]  # bsz, trunc, Np
+                        g, h = self.RNN(v, pc_in, h)
+                    else:
+                        g, h = self.RNN(v, h)
+                    h = h.detach()
+                    total_g.append(g)
+                total_g = torch.cat(total_g, dim=1)
+                return total_g  # bsz, seq_len, Ng
 
     def predict(self, inputs, pc_outputs=None):
         """
