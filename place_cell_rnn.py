@@ -170,10 +170,16 @@ if options.mode == "train":
         else:
             options.save_dir = os.path.join("./results/rnn_online", now)
     else:
-        if options.use_prev_input:
-            options.save_dir = os.path.join("./results/rnn_prev", now)
+        if options.truncating == 0:
+            if options.use_prev_input:
+                options.save_dir = os.path.join("./results/rnn_prev", now)
+            else:
+                options.save_dir = os.path.join("./results/rnn", now)
         else:
-            options.save_dir = os.path.join("./results/rnn", now)
+            if options.use_prev_input:
+                options.save_dir = os.path.join("./results/rnn_trunc_prev", now)
+            else:
+                options.save_dir = os.path.join("./results/rnn_trunc", now)
 
     if not os.path.exists(options.save_dir):
         os.makedirs(options.save_dir)
@@ -205,10 +211,16 @@ else:
         else:
             save_dir = os.path.join("./results/rnn_online", now)
     else:
-        if options.use_prev_input:
-            save_dir = os.path.join("./results/rnn_prev", now)
+        if options.truncating == 0:
+            if options.use_prev_input:
+                save_dir = os.path.join("./results/rnn_prev", now)
+            else:
+                save_dir = os.path.join("./results/rnn", now)
         else:
-            save_dir = os.path.join("./results/rnn", now)
+            if options.use_prev_input:
+                save_dir = os.path.join("./results/rnn_trunc_prev", now)
+            else:
+                save_dir = os.path.join("./results/rnn_trunc", now)
 
     # load the configuration file to args
     t_args = argparse.Namespace()

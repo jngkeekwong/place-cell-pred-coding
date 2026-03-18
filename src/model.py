@@ -207,10 +207,6 @@ class RNN(torch.nn.Module):
             g: Batch of grid cell activations with shape [batch_size, sequence_length, Ng].
         """
         if self.update_weights_online:
-            if inputs.dim() != 3:
-                raise ValueError(
-                    "Online updates expect inputs with shape [batch_size, 1, 2]"
-                )
 
             if self.use_prev_input:
                 if self.pc_input.dim() == 2:
