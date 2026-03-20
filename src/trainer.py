@@ -188,11 +188,34 @@ class Trainer(object):
             wandb.finish()
 
     def predict(self, inputs, pc_outputs=None):
-        if self.use_prev_input:
-            pred_pos = self.model.predict(inputs, pc_outputs=pc_outputs)
+        if self.update_weights_online:
+            vs, init_actv = inputs[0].to(self.options.device), inputs[1].to(self.options.device)
+
+            # Reset recurrent state for online rollout.
+            self.model.prev_hidden = self.model.encoder(init_actv).clone().detach()
+
+            pred_pos = []
+            with torch.no_grad():
+                for k in range(self.options.sequence_length):
+                    v_k = vs[:, k : k + 1]
+                    pred_k = self.model.predict(v_k, pc_outputs=None)
+                    pred_pos.append(pred_k)
+
+                    # update the hidden state and input
+                    if self.use_prev_input:
+                        if pc_outputs is not None:
+                            self.model.pc_input = pc_outputs[:, k, :].to(self.options.device).clone().detach()
+                        else:
+                            self.model.pc_input = pred_k[:, 0, :].clone().detach()
+
+            pred_pos = torch.cat(pred_pos, dim=1)
         else:
-            pred_pos = self.model.predict(inputs, pc_outputs=None)
+            if self.use_prev_input:
+                pred_pos = self.model.predict(inputs, pc_outputs=pc_outputs)
+            else:
+                pred_pos = self.model.predict(inputs, pc_outputs=None)
         return pred_pos, None
+
 
 class PCTrainer(object):
     def __init__(self, options, model, init_model, trajectory_generator, place_cells):

@@ -195,11 +195,12 @@ if options.mode == "train":
 
     trainer.train(preloaded_data=options.preloaded_data, save=options.save)
     plot_place_cells(place_cell, options, res=30)
-    plot_2d_performance(place_cell, generator, options, trainer)
-    rate_map = compute_ratemaps(
-        model, trainer, generator, options, res=20, n_avg=200, Ng=options.Ng
-    )
-    plot_2d_ratemaps(rate_map, options, n_col=4)
+    if not options.update_weights_online:
+        plot_2d_performance(place_cell, generator, options, trainer)
+        rate_map = compute_ratemaps(
+            model, trainer, generator, options, res=20, n_avg=200, Ng=options.Ng
+        )
+        plot_2d_ratemaps(rate_map, options, n_col=4)
     plot_loss_err(trainer, options)
     np.save(os.path.join(options.save_dir, "loss"), trainer.loss)
 
