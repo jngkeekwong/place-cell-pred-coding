@@ -1,4 +1,4 @@
-program: place_cell_rnn_sweep.py
+program: place_cell_rnn_trunc_sweep.py
 project: rnn_sweep_bptt_trunc
 name: search_v1
 method: bayes
